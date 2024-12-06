@@ -17,8 +17,10 @@ contract TimexToken is ERC20, Ownable {
     uint256 public currentYear = 1;
 
     event TokensReleased(uint256 year, uint256 releasedAmount, uint256 remainingLocked);
+    event Wrap(address indexed user, uint256 amount);
+    event Unwrap(address indexed user, uint256 amount);
 
-    constructor() ERC20("TIMEX", "TOMEX") Ownable(msg.sender){
+    constructor() ERC20("TIMEX", "TOMEX") Ownable(msg.sender) {
         _mint(msg.sender, INITIAL_CIRCULATING_SUPPLY);
         lastReleaseTimestamp = block.timestamp;
     }
@@ -49,6 +51,23 @@ contract TimexToken is ERC20, Ownable {
         } else {
             return FINAL_RELEASE_PERCENTAGE;
         }
+    }
+
+    function wrap() external payable {
+        require(msg.value > 0, "Must send a positive amount");
+        _mint(msg.sender, msg.value);
+        emit Wrap(msg.sender, msg.value);
+    }
+
+    function unwrap(uint256 tokenAmount) external {
+        require(tokenAmount > 0, "Must send a positive token amount");
+        require(address(this).balance >= tokenAmount, "Insufficient native coin balance in contract");
+
+        _burn(msg.sender, tokenAmount);
+        (bool success, ) = msg.sender.call{value: tokenAmount}("");
+        require(success, "Native coin transfer failed");
+
+        emit Unwrap(msg.sender, tokenAmount);
     }
 
     receive() external payable {}
