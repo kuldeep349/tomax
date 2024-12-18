@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract TimexToken is ERC20, Ownable {
+contract WrappedTimexToken is ERC20, Ownable {
     uint256 public constant MAX_SUPPLY = 25_000_000 ether;
     uint256 public constant INITIAL_CIRCULATING_SUPPLY = 7_000_000 ether;
     uint256 public constant LOCKED_SUPPLY = MAX_SUPPLY - INITIAL_CIRCULATING_SUPPLY;
@@ -16,16 +16,54 @@ contract TimexToken is ERC20, Ownable {
     uint256 public lastReleaseTimestamp;
     uint256 public currentYear = 1;
 
-    event TokensReleased(uint256 year, uint256 releasedAmount, uint256 remainingLocked);
+    address public timelock;
+    mapping(address => bool) public approvedRelease;
+    address[] public multisigApprovers;
+    uint256 public approvalCount;
+
+    event TokensReleased(uint256 indexed year, uint256 indexed amount, uint256 remainingLocked);
     event Wrap(address indexed user, uint256 amount);
     event Unwrap(address indexed user, uint256 amount);
+    event FundsWithdrawn(address indexed owner, uint256 amount);
 
-    constructor() ERC20("TIMEX", "TOMEX") Ownable(msg.sender) {
+    modifier onlyTimelock() {
+        require(msg.sender == timelock, "Timelock only can call this");
+        _;
+    }
+
+    constructor(address _timelock, address[] memory _approvers)
+        ERC20("Wrapped TIMEX", "wTOMAX")
+        Ownable(msg.sender)
+    {
+        require(_timelock != address(0), "Timelock address required");
+        require(_approvers.length >= 3, "Minimum 3 multisig approvers required");
+
+        timelock = _timelock;
+        multisigApprovers = _approvers;
+
         _mint(msg.sender, INITIAL_CIRCULATING_SUPPLY);
         lastReleaseTimestamp = block.timestamp;
     }
 
-    function releaseLockedTokens() external onlyOwner {
+    function approveRelease() external {
+        require(isMultisigApprover(msg.sender), "Not an approver");
+        require(!approvedRelease[msg.sender], "Already approved");
+
+        approvedRelease[msg.sender] = true;
+        approvalCount++;
+
+        require(approvalCount >= 2, "Requires at least 2 approvals");
+    }
+
+    function resetApprovals() internal {
+        for (uint256 i = 0; i < multisigApprovers.length; i++) {
+            approvedRelease[multisigApprovers[i]] = false;
+        }
+        approvalCount = 0;
+    }
+
+    function releaseLockedTokens() external onlyTimelock {
+        require(approvalCount >= 2, "At least 2 approvals required");
         require(currentYear <= 10, "Release schedule completed");
         require(block.timestamp >= lastReleaseTimestamp + 365 days, "Release only allowed once a year");
 
@@ -40,7 +78,8 @@ contract TimexToken is ERC20, Ownable {
         lastReleaseTimestamp = block.timestamp;
         currentYear++;
 
-        emit TokensReleased(currentYear - 1, releaseAmount, lockedSupply);
+        resetApprovals();
+        emit TokensReleased(currentYear, releaseAmount, lockedSupply);
     }
 
     function getReleasePercentage() public view returns (uint256) {
@@ -55,19 +94,38 @@ contract TimexToken is ERC20, Ownable {
 
     function wrap() external payable {
         require(msg.value > 0, "Must send a positive amount");
+        require(totalSupply() + msg.value <= MAX_SUPPLY, "Exceeds MAX_SUPPLY");
+
         _mint(msg.sender, msg.value);
         emit Wrap(msg.sender, msg.value);
     }
 
     function unwrap(uint256 tokenAmount) external {
         require(tokenAmount > 0, "Must send a positive token amount");
-        require(address(this).balance >= tokenAmount, "Insufficient native coin balance in contract");
+        require(address(this).balance >= tokenAmount, "Insufficient contract balance");
 
         _burn(msg.sender, tokenAmount);
         (bool success, ) = msg.sender.call{value: tokenAmount}("");
         require(success, "Native coin transfer failed");
 
         emit Unwrap(msg.sender, tokenAmount);
+    }
+
+    function withdrawNativeFunds() external onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No funds to withdraw");
+
+        (bool success, ) = msg.sender.call{value: balance}("");
+        require(success, "Withdraw failed");
+
+        emit FundsWithdrawn(msg.sender, balance);
+    }
+
+    function isMultisigApprover(address approver) public view returns (bool) {
+        for (uint256 i = 0; i < multisigApprovers.length; i++) {
+            if (multisigApprovers[i] == approver) return true;
+        }
+        return false;
     }
 
     receive() external payable {}
