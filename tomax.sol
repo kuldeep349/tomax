@@ -33,7 +33,7 @@ contract WrappedTimexToken is ERC20, Ownable {
 
     constructor(address _timelock, address[] memory _approvers)
         ERC20("Wrapped TIMEX", "wTOMAX")
-        Ownable(msg.sender)
+        Ownable()
     {
         require(_timelock != address(0), "Timelock address required");
         require(_approvers.length >= 3, "Minimum 3 multisig approvers required");
@@ -52,7 +52,7 @@ contract WrappedTimexToken is ERC20, Ownable {
         approvedRelease[msg.sender] = true;
         approvalCount++;
 
-        require(approvalCount >= 2, "Requires at least 2 approvals");
+        require(approvalCount >= multisigApprovers.length / 2 + 1, "Insufficient approvals");
     }
 
     function resetApprovals() internal {
@@ -63,7 +63,7 @@ contract WrappedTimexToken is ERC20, Ownable {
     }
 
     function releaseLockedTokens() external onlyTimelock {
-        require(approvalCount >= 2, "At least 2 approvals required");
+        require(approvalCount >= multisigApprovers.length / 2 + 1, "Insufficient approvals");
         require(currentYear <= 10, "Release schedule completed");
         require(block.timestamp >= lastReleaseTimestamp + 365 days, "Release only allowed once a year");
 
