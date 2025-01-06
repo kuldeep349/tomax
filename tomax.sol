@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "./Ownable.sol";
 
 contract WrappedTimexToken is ERC20, Ownable {
     uint256 public constant MAX_SUPPLY = 25_000_000 ether;
@@ -31,10 +31,7 @@ contract WrappedTimexToken is ERC20, Ownable {
         _;
     }
 
-    constructor(address _timelock, address[] memory _approvers)
-        ERC20("Wrapped TIMEX", "wTOMAX")
-        Ownable()
-    {
+    constructor(address _timelock, address[] memory _approvers) ERC20("Wrapped TIMEX", "wTOMAX") {
         require(_timelock != address(0), "Timelock address required");
         require(_approvers.length >= 3, "Minimum 3 multisig approvers required");
 
