@@ -41,7 +41,7 @@ contract WrappedTimexToken is ERC20, Ownable {
         _mint(msg.sender, INITIAL_CIRCULATING_SUPPLY);
         lastReleaseTimestamp = block.timestamp;
     }
-
+    
     function approveRelease() external {
         require(isMultisigApprover(msg.sender), "Not an approver");
         require(!approvedRelease[msg.sender], "Already approved");
@@ -49,9 +49,10 @@ contract WrappedTimexToken is ERC20, Ownable {
         approvedRelease[msg.sender] = true;
         approvalCount++;
 
-        require(approvalCount >= multisigApprovers.length / 2 + 1, "Insufficient approvals");
+        // Calculate majority approval (rounded up)
+        uint256 requiredApprovals = (multisigApprovers.length + 1) / 2;
+        require(approvalCount >= requiredApprovals, "Insufficient approvals");
     }
-
     function resetApprovals() internal {
         for (uint256 i = 0; i < multisigApprovers.length; i++) {
             approvedRelease[multisigApprovers[i]] = false;
