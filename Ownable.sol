@@ -18,11 +18,5 @@ abstract contract Ownable {
 
     function owner() public view returns (address) {
         return _owner;
-    }
-
-    function transferOwnership(address newOwner) public onlyOwner {
-        require(newOwner != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipTransferred(_owner, newOwner);
-        _owner = newOwner;
-    }
+    } 
 }
