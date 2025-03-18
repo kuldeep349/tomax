@@ -47,7 +47,7 @@ contract TomaxToken is ERC20, ReentrancyGuard {
         require(_superAdmin != address(0), "Invalid Super Admin address.");
         superAdmin = _superAdmin;
 
-        _mint(msg.sender, INITIAL_CIRCULATING_SUPPLY); // Mint initial circulating supply
+        _mint(address(this), INITIAL_CIRCULATING_SUPPLY); // Mint initial circulating supply
     }
 
     modifier onlyWhitelisted() {
@@ -174,9 +174,9 @@ contract TomaxToken is ERC20, ReentrancyGuard {
 
         // Update the remaining locked supply
         lockedSupply -= annualRelease;
-
-        // Mint the released tokens to the SuperAdmin
-        _mint(superAdmin, annualRelease);
+        require(totalSupply() + annualRelease + lockedSupply <= TOTAL_SUPPLY,"Cannot mint more than total supply");
+        // Mint the released tokens to contract
+        _mint(address(this), annualRelease);
 
         emit TokensReleased(currentYear, annualRelease, lockedSupply);
 
@@ -192,13 +192,12 @@ contract TomaxToken is ERC20, ReentrancyGuard {
     // Function to wrap native TOMAX coins into wTOMAX tokens
     function wrap() public payable whenNotPausedAndOnlyEOA {
         require(msg.value > 0, "Amount must be greater than 0");
-        uint256 totalSupply = totalSupply();
+        // uint256 totalSupply = totalSupply();
         require(
-            totalSupply + msg.value <= TOTAL_SUPPLY,
+            msg.value <= balanceOf(address(this)),
             "Cannot mint more than total supply"
         );
-
-        _mint(msg.sender, msg.value);
+        transfer(msg.sender, msg.value);
         emit Wrapped(msg.sender, msg.value);
     }
 
@@ -207,25 +206,26 @@ contract TomaxToken is ERC20, ReentrancyGuard {
         uint256 amount
     ) public nonReentrant whenNotPausedAndOnlyEOA {
         require(balanceOf(msg.sender) >= amount, "Insufficient wTOMAX balance");
-        _burn(msg.sender, amount);
+        // _burn(msg.sender, amount);
+        transferFrom(msg.sender,address(this),amount); 
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         require(success, "Transfer failed");
         emit Unwrapped(msg.sender, amount);
     }
 
     // Function for owners to approve withdrawal of funds
-    function approveWithdraw(
+    function nativeWithdrawal(   // name changed from approveWithdrawl  to nativeWithdrawl
         uint256 amount
     ) external onlyWhitelisted whenNotPausedAndOnlyEOA {
         bytes32 requestHash = keccak256(
-            abi.encodePacked("approveWithdraw", amount)
+            abi.encodePacked("nativeWithdrawal", amount)
         );
         // Approval process handled by multiSigApproval modifier
-        _approveWithdraw(amount, requestHash);
+        _nativeWithdrawal(amount, requestHash);
     }
 
     // Internal function to handle withdrawal with multi-sig approval and superAdmin execution
-    function _approveWithdraw(
+    function _nativeWithdrawal(
         uint256 amount,
         bytes32 requestHash
     ) internal multiSigApproval(requestHash) {
@@ -238,7 +238,8 @@ contract TomaxToken is ERC20, ReentrancyGuard {
     }
 
     // Function for owners to approve any request that needs multi-signature approval
-    function approveRequest(string memory functionName) public onlyWhitelisted {
+    function approveRequest(string calldata functionName) public onlyWhitelisted {
+        require(msg.sender != superAdmin, "Not authorized");
         // Convert the function name (string) to bytes32
         bytes32 fhash = keccak256(abi.encodePacked(functionName, currentYear));
 
@@ -250,18 +251,16 @@ contract TomaxToken is ERC20, ReentrancyGuard {
 
         emit OwnerApproved(msg.sender, fhash);
 
-        // If the required number of approvals (3 out of 5) is reached, execute the request
-        // if (approvalsCount >= REQUIRED_APPROVALS) {
-        //     executeRequest(requestHash);
-        // }
     }
 
     function approveRequestForWithdrawals(
-        string memory functionName,
+        string calldata functionName,
         uint256 amount
     ) public onlyWhitelisted {
+        require(msg.sender != superAdmin, "Not authorized");
         // Convert the function name (string) to bytes32
         bytes32 fhash = keccak256(abi.encodePacked(functionName, amount));
+        require(address(this).balance>= amount,"insufficient amount");
 
         require(
             !approvals[fhash][msg.sender],
@@ -273,10 +272,11 @@ contract TomaxToken is ERC20, ReentrancyGuard {
     }
 
     function approveRequestForOwnerChange(
-        string memory functionName,
+        string calldata functionName,
         address ownerToRemove,
         address newOwner
     ) public onlyWhitelisted {
+        require(msg.sender != superAdmin, "Not authorized");
         // Convert the function name (string) to bytes32
         bytes32 fhash = keccak256(
             abi.encodePacked(functionName, ownerToRemove, newOwner, currentYear)
@@ -346,7 +346,5 @@ contract TomaxToken is ERC20, ReentrancyGuard {
         // Add the new owner
         owners.push(newOwner);
         isOwner[newOwner] = true; // Mark the new address as an owner
-
-        emit OwnerApproved(newOwner, requestHash); // Emit the approval event
     }
 }
